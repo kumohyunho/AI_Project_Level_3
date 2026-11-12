@@ -35,6 +35,27 @@ CPU에서 영상을 프레임 순서대로 처리합니다. 추적 모드의 진
 
 ID는 영상 안에서 ByteTrack이 부여하는 임시 번호입니다. WIDER FACE 얼굴 검출 결과는 화면 모자이크에만 사용합니다. 원본 재생 모드는 파일 자체를 그대로 재생하며, 추적 모드에서도 검출이 누락된 얼굴에는 모자이크가 적용되지 않습니다.
 
+### CrowdHuman과 WIDER FACE 적용
+
+기존 GUI에서 **ByteTrack → 시작**을 누르면 기본 YOLO11n과 ByteTrack으로 사람 ID·이동 궤적을 표시하고, `models/face.pt`로 검출한 얼굴을 모자이크 처리합니다. 압축을 풀 때 `models` 폴더도 복사하세요. 이전에 별도로 복사한 `models/person.pt`나 `models/coco.pt`가 있다면 그 가중치가 사람 검출에 우선 사용됩니다.
+
+| 포함된 가중치 | 학습 / 검증 이미지 | 설정 | 검증 mAP50–95 |
+|---|---:|---|---:|
+| `experiments/crowdhuman_person.pt` | 96 / 32 | CrowdHuman train01·val, 4에폭, 크기 256 | 0.154 |
+| `models/face.pt` | 96 / 32 | WIDER FACE train·val, 4에폭, 크기 384 | 0.197 |
+
+CrowdHuman은 [공식 데이터](https://www.crowdhuman.org/download.html)의 [미러](https://huggingface.co/datasets/Funtion/CrowdHuman)에서 train01·val 이미지와 라벨을 가져왔습니다. WIDER FACE는 [CUHK 배포처](https://huggingface.co/datasets/CUHK-CSE/wider_face/tree/main/data)의 공식 train·val 이미지와 라벨을 사용했습니다. 두 모델 모두 배치 8, seed 42, AdamW, 초기 학습률 0.0005, 첫 10개 레이어 고정, 모자이크 증강을 끈 설정으로 추가 학습했습니다. CrowdHuman은 기본 YOLO11n에서 COCO 클래스 헤드를 유지해 시작했고, WIDER FACE는 [akanametov/yolo-face의 YOLO11n 얼굴 검출 가중치](https://github.com/akanametov/yolo-face/releases/tag/1.0.0)에서 시작했습니다. 얼굴 사전 학습 자료와 이번 검증 이미지의 독립성은 확인하지 않았습니다.
+
+공식 train과 val에서 따로 추출한 이미지 파일명은 `experiments/training_samples.txt`에서 확인할 수 있습니다. 원본 이미지와 라벨은 ZIP에 포함하지 않았습니다. 전체 데이터로 학습하려면 아래 절차를 사용하세요.
+
+MOT17-02-FRCNN의 처음 60프레임에서 기본 YOLO11n의 HOTA는 **38.40%**, CrowdHuman 추가 학습 모델은 **10.29%**였습니다. 이 구간에서는 CrowdHuman 모델의 오검출이 많아, 기본 사람 검출 모델을 유지했습니다. CrowdHuman과 얼굴 모델을 함께 사용하려면 아래 한 줄을 실행하고 추적을 다시 시작하세요.
+
+```powershell
+Copy-Item .\experiments\crowdhuman_person.pt .\models\person.pt
+```
+
+기본 사람 검출로 돌아가려면 `models/person.pt`의 이름을 바꾸세요. 모자이크를 끄려면 `models/face.pt`의 이름을 바꾸세요. 원본 재생 모드에서는 얼굴 모자이크가 적용되지 않습니다.
+
 ### 포함된 실험 가중치
 
 `experiments/coco128_1epoch.pt`는 사전 학습된 YOLO11n을 COCO128 이미지 96장으로 추가 학습한 결과입니다. 나머지 32장을 검증용으로 분리했으며, 원본 사전 학습 데이터에 포함될 수 있는 이미지이므로 독립 평가 결과로 해석하지 않습니다. CPU에서 1에폭, 이미지 크기 256, 배치 8로 실험했습니다.
@@ -44,7 +65,7 @@ ID는 영상 안에서 ByteTrack이 부여하는 임시 번호입니다. WIDER F
 | 기본 YOLO11n | 0.385 | 0.369 |
 | COCO128 1에폭 추가 학습 | 0.359 | 0.350 |
 
-이 실험에서 기본 가중치의 검출 점수가 더 높아 기본 가중치 선택 순서를 유지했습니다. 실험 파일을 GUI에 적용하려면 `models/coco.pt`로 복사하세요. `models/person.pt`가 있으면 그 파일이 우선합니다.
+이 이전 실험에서 기본 YOLO11n의 검출 점수가 COCO128 추가 학습본보다 높았습니다. 실험 파일을 GUI에 적용하려면 `models/coco.pt`로 복사하세요. `models/person.pt`가 있으면 그 파일이 우선합니다.
 
 ```powershell
 New-Item -ItemType Directory -Force .\models
@@ -110,5 +131,3 @@ MOT20에서는 벤치마크 이름, 데이터 경로, 시퀀스 이름과 결과
 | MOT17-02-FRCNN | COCO128 추가 학습 | 26.80 | 25.45 | 13.85 | 0 |
 | MOT20-01 | 기본 YOLO11n | 41.40 | 47.91 | 33.03 | 3 |
 | MOT20-01 | COCO128 추가 학습 | 21.65 | 20.86 | 11.22 | 6 |
-
-CrowdHuman과 WIDER FACE 전체 학습은 실행하지 않았습니다. WIDER FACE 공식 라벨 파싱과 두 데이터셋의 소규모 변환 테스트를 통과했습니다. 얼굴 검출 가중치와 사람 추가 학습 가중치는 위 명령으로 생성합니다.
